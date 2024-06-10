@@ -8,7 +8,7 @@ from transformers import (
     pipeline,
 )
 
-from peft import LoraConfig, PeftModel, prepare_model_for_kbit_training
+from peft import LoraConfig, PeftModelForCausalLM, prepare_model_for_kbit_training
 from trl import SFTTrainer, SFTConfig
 
 # Model
@@ -38,7 +38,6 @@ peft_config = LoraConfig(
     lora_dropout=0.05,
     bias="none",
     task_type="CAUSAL_LM",
-    peft_type="LORA",
     target_modules=[
         "up_proj",
         "down_proj",
@@ -54,9 +53,6 @@ peft_config = LoraConfig(
 model = AutoModelForCausalLM.from_pretrained(
     base_model, quantization_config=bnb_config, device_map={"": 0}
 )
-
-model.config.use_cache = False
-model.config.pretraining_tp = 1
 
 # Cast the layernorm in fp32, make output embedding layer require grads, add the upcasting of the lmhead to fp32
 model = prepare_model_for_kbit_training(model)
@@ -106,9 +102,11 @@ model = AutoModelForCausalLM.from_pretrained(
     low_cpu_mem_usage=True,
     return_dict=True,
     quantization_config=quantization_config,
+    torch_dtype=torch.float16,
+    device_map={"": 0},
 )
 
-model = PeftModel.from_pretrained(model, new_model)
+model = PeftModelForCausalLM.from_pretrained(model, new_model)
 model = model.merge_and_unload()
 
 tokenizer = AutoTokenizer.from_pretrained(base_model, trust_remote_code=True)
@@ -118,7 +116,5 @@ tokenizer.padding_side = "right"
 access_token_write = "token"
 model.generation_config.temperature = None
 model.generation_config.top_p = None
-model.base_model_name_or_path = "Ichsan2895/Merak-7B-v2"
-model.config.to_json_file("adapter_config.json")
 model.push_to_hub(new_model, use_temp_dir=False, token=access_token_write, check_pr=True)
 tokenizer.push_to_hub(new_model, use_temp_dir=False, token=access_token_write, check_pr=True)
